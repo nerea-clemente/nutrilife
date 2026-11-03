@@ -38,7 +38,7 @@ export default function App() {
           <Route path="/ciclo" element={<CyclePage />} />
           <Route path="/graficas" element={<ChartsPage />} />
           <Route path="/galeria" element={<GalleryPage />} />
-          <Route path="/exportar" element={<ExportPage />} />
+          <Route path="/exportar" element={<ExportPage user={auth.user} />} />
           <Route path="/mas" element={<MorePage user={auth.user} onLogout={check} />} />
           <Route path="/recordatorios" element={<RemindersPage />} />
           <Route path="/etiquetas" element={<TagsPage />} />

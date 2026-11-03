@@ -1,56 +1,47 @@
 # NutriLife · Diario de nutrición y digestión
 
-Web app personal (PWA, mobile-first) para el diario que pide la nutricionista: comidas con fotos, bebidas, agua (botella Owala de 750 ml), deposiciones (escala de Bristol), síntomas digestivos, sueño, estrés, notas y seguimiento del ciclo menstrual. Con gráficas, galería, exportación a PDF/CSV y recordatorios.
+Web app personal (PWA, mobile-first) para el diario que pide la nutricionista: comidas con fotos, bebidas, agua (botella Owala de 750 ml), deposiciones (escala de Bristol), síntomas digestivos, sueño, estrés, notas y seguimiento del ciclo menstrual. Con historial, gráficas, galería, exportación a PDF/CSV y recordatorios.
 
-## Stack
+Funciona en **Cloudflare Workers** conectado a este repositorio de GitHub: cada push se despliega solo.
 
-- **Frontend:** React + Vite, sin frameworks de UI. Poppins autoalojada. PWA con service worker propio.
-- **Backend:** Node 22 + Express, SQLite integrado (`node:sqlite`, sin dependencias nativas).
-- **Fotos:** se guardan en disco (`data/uploads/<usuaria>/`) y **sólo se sirven con sesión iniciada**, comprobando que pertenecen a la usuaria. No hay URLs públicas. Se redimensionan en el móvil antes de subir (y así se eliminan los metadatos EXIF, incluida la ubicación).
-- **PDF:** generado en el servidor con PDFKit. **Push:** Web Push con claves VAPID.
+## Cómo está hecha
+
+- **App:** React + Vite (carpeta `client/`), servida como archivos estáticos por Cloudflare. Instalable en el móvil.
+- **API:** un Worker (`worker/`) con [Hono](https://hono.dev).
+- **Datos:** base de datos **D1** (SQLite de Cloudflare). La estructura se crea sola la primera vez.
+- **Fotos:** bucket **R2** privado. Las fotos solo se sirven a través del Worker con tu sesión iniciada. No tienen URL pública.
+- **PDF y CSV:** se generan en el propio móvil.
+- **Recordatorios:** Web Push, enviados por una tarea programada del Worker cada minuto. Las claves se generan solas.
+
+## Publicarla en Cloudflare (una vez)
+
+1. Entra en https://dash.cloudflare.com → **Workers y Pages** → **Crear** → **Importar un repositorio** → conecta GitHub y elige `nutrilife`.
+2. Revisa la configuración:
+   - Rama: la de este código.
+   - Comando de compilación: `npm run build`.
+   - Comando de despliegue: `npx wrangler deploy` (es el que viene por defecto).
+3. **Desplegar.** Wrangler crea solo la base de datos D1 y el bucket R2.
+   - Si da un error sobre R2, entra una vez en **R2** en el panel y actívalo (el plan gratuito sobra), y vuelve a desplegar.
+4. Abre la dirección `https://nutrilife.<tu-subdominio>.workers.dev` y **crea tu cuenta enseguida**. Solo se permite una; después el registro queda cerrado.
+   - Si quieres más seguridad durante ese primer momento, crea antes un secreto `SETUP_CODE` en *Configuración → Variables y secretos*. La app te lo pedirá al registrarte.
+5. En el móvil:
+   - **iPhone:** en Safari, *Compartir → Añadir a pantalla de inicio*.
+   - **Android:** en Chrome, *⋮ → Instalar aplicación*.
 
 ## En local
 
 ```bash
 npm install
-npm run seed      # opcional: cuenta demo@nutrilife.app / demo1234 con una semana de ejemplo
-npm run dev       # API en :3001 y la app en http://localhost:5173
+npm run preview          # compila y arranca el Worker en http://localhost:8787 (D1/R2 simulados)
+node scripts/seed.js     # en otra terminal: datos de ejemplo, usuario demo@nutrilife.app / demo1234
 ```
 
-Sin `seed`, la primera vez que abras la app te pedirá crear tu cuenta (sólo se permite **una**).
-
-Producción en local: `npm run build && npm start` → http://localhost:3001
+Para desarrollar con recarga en caliente: `npm run dev` (app en http://localhost:5173).
 
 ## Privacidad y seguridad
 
-- Login obligatorio (contraseñas con scrypt, cookie de sesión `HttpOnly` + `SameSite=Strict` + `Secure` en producción).
-- Registro cerrado tras la primera cuenta. En producción, además, el registro sólo funciona si defines `SETUP_CODE` (o crea la cuenta por terminal con `npm run create-user -- email contraseña Nombre`).
-- Límite de intentos de login, comprobación de origen en peticiones que modifican datos, cabeceras CSP/HSTS, `noindex`.
-- El service worker nunca guarda en caché datos de `/api` (ni fotos).
-- Todo vive en `DATA_DIR` (base de datos + fotos + claves VAPID): **haz copias de seguridad de esa carpeta**.
-
-## Variables de entorno
-
-| Variable | Para qué |
-|---|---|
-| `PORT` | Puerto (por defecto 3001) |
-| `DATA_DIR` | Carpeta de datos (por defecto `./data`) |
-| `SETUP_CODE` | Código necesario para crear la cuenta en producción |
-| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | Opcional; si no, se generan y guardan en `DATA_DIR` |
-
-## Despliegue (Fly.io, recomendado)
-
-Hace falta HTTPS para instalar la PWA y para las notificaciones, y un disco persistente para la base de datos y las fotos.
-
-```bash
-fly launch --no-deploy --copy-config        # usa el Dockerfile y fly.toml incluidos
-fly volumes create nutrilife_data --region mad --size 1
-fly secrets set SETUP_CODE="algo-largo-y-secreto"
-fly deploy
-```
-
-Abre `https://<tu-app>.fly.dev` en el móvil, crea la cuenta con el código, y:
-- **iPhone (Safari):** Compartir → «Añadir a pantalla de inicio». Las notificaciones sólo funcionan desde la app instalada (iOS 16.4+).
-- **Android (Chrome):** menú ⋮ → «Instalar aplicación».
-
-Cualquier servidor con Docker y un volumen sirve igual (Railway, Render con disco, un VPS con Caddy…).
+- Login obligatorio: contraseña con PBKDF2-SHA256 y cookie de sesión `HttpOnly`, `Secure` y `SameSite=Strict`.
+- Una sola cuenta. Límite de intentos de login y comprobación de origen en las peticiones que modifican datos.
+- Cabeceras de seguridad (CSP, HSTS, `noindex`) en `client/public/_headers`.
+- El service worker nunca guarda en caché datos de `/api` ni fotos.
+- Las fotos se redimensionan en el móvil antes de subirlas, lo que también elimina los metadatos EXIF (incluida la ubicación).

@@ -1,52 +1,62 @@
-// Rellena una cuenta de demostración con una semana de datos de ejemplo.
-//   npm run seed            -> crea demo@nutrilife.app / demo1234
-// Las "fotos" son ilustraciones generadas (necesita Playwright; si no está, se omiten).
-import fs from 'node:fs';
+// Rellena la app (local) con una semana de datos de ejemplo a través de la API.
+//   npm run preview        (en otra terminal)
+//   npm run seed           -> cuenta demo@nutrilife.app / demo1234
+// Uso: node scripts/seed.js [url]   (por defecto http://localhost:8787)
+// Las "fotos" son ilustraciones generadas con Playwright (si no está instalado, se omiten).
+import { createRequire } from 'node:module';
 import path from 'node:path';
-import crypto from 'node:crypto';
-import { db, UPLOAD_DIR, saveSettings, getSettings } from './db.js';
-import { hashPassword } from './auth.js';
 import { emptyEntry } from '../shared/constants.js';
 import { addDays } from '../shared/cycle.js';
 
+const BASE = process.argv[2] || 'http://localhost:8787';
 const EMAIL = process.env.SEED_EMAIL || 'demo@nutrilife.app';
 const PASS = process.env.SEED_PASSWORD || 'demo1234';
+let cookie = '';
 
-function today() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+async function call(p, { method = 'GET', body, form } = {}) {
+  const headers = { cookie, origin: BASE };
+  if (body) headers['content-type'] = 'application/json';
+  const res = await fetch(BASE + '/api' + p, { method, headers, body: form || (body ? JSON.stringify(body) : undefined) });
+  const set = res.headers.get('set-cookie');
+  if (set) cookie = set.split(';')[0];
+  const data = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(`${method} ${p}: ${data?.error || res.status}`);
+  return data;
 }
-const T = process.env.SEED_TODAY || today();
 
-let user = db.prepare('SELECT id FROM users WHERE email = ?').get(EMAIL);
-if (!user) {
-  const info = db.prepare('INSERT INTO users (email, name, password_hash) VALUES (?, ?, ?)').run(EMAIL, 'Nerea', hashPassword(PASS));
-  user = { id: Number(info.lastInsertRowid) };
-}
-const uid = user.id;
-for (const t of ['entries', 'photos', 'periods', 'cycle_days', 'tags'])
-  db.prepare(`DELETE FROM ${t} WHERE user_id = ?`).run(uid);
-fs.rmSync(path.join(UPLOAD_DIR, String(uid)), { recursive: true, force: true });
+const d = new Date();
+const T = process.env.SEED_TODAY || `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+const st = await call('/auth/status');
+if (st.canSignup) await call('/auth/signup', { method: 'POST', body: { email: EMAIL, password: PASS, name: 'Nerea' } });
+else await call('/auth/login', { method: 'POST', body: { email: EMAIL, password: PASS } });
 
 const start = addDays(T, -6);
-saveSettings(uid, { ...getSettings(uid), start_date: start, timezone: 'Europe/Madrid' });
+await call('/settings', { method: 'PUT', body: { start_date: start, timezone: 'Europe/Madrid' } });
 
-// Historial del ciclo: reglas cada ~28-29 días, la última empezó hace 3 días.
+// Ciclo: reglas cada ~28-29 días; la última empezó hace 3 días y sigue en curso.
 const lastStart = addDays(T, -3);
-const starts = [-117, -88, -60, -31].map((n) => addDays(lastStart, n));
-for (const s of starts) db.prepare('INSERT INTO periods (user_id, start_date, end_date) VALUES (?, ?, ?)').run(uid, s, addDays(s, 4));
-db.prepare('INSERT INTO periods (user_id, start_date, end_date) VALUES (?, ?, NULL)').run(uid, lastStart);
+const existing = await call('/cycle');
+for (const p of existing.periods) await call(`/cycle/periods/${p.id}`, { method: 'DELETE' });
+for (const n of [-117, -88, -60, -31]) {
+  const s = addDays(lastStart, n);
+  await call('/cycle/periods', { method: 'POST', body: { start_date: s, end_date: addDays(s, 4) } });
+}
+await call('/cycle/periods', { method: 'POST', body: { start_date: lastStart } });
 const flows = ['medio', 'abundante', 'medio', 'ligero'];
 for (let i = 0; i < 4; i++) {
-  const d = addDays(lastStart, i);
-  if (d > T) break;
+  const day = addDays(lastStart, i);
+  if (day > T) break;
   const sym = i === 0 ? ['Calambres', 'Hinchazón', 'Cansancio'] : i === 1 ? ['Calambres', 'Dolor lumbar'] : [];
-  db.prepare('INSERT INTO cycle_days (user_id, date, flow, symptoms) VALUES (?, ?, ?, ?)').run(uid, d, flows[i], JSON.stringify(sym));
+  await call(`/cycle/days/${day}`, { method: 'PUT', body: { flow: flows[i], symptoms: sym } });
 }
-db.prepare('INSERT INTO cycle_days (user_id, date, flow, symptoms) VALUES (?, ?, NULL, ?)').run(uid, addDays(lastStart, -2), JSON.stringify(['Antojos', 'Sensibilidad mamaria']));
+await call(`/cycle/days/${addDays(lastStart, -2)}`, { method: 'PUT', body: { flow: null, symptoms: ['Antojos', 'Sensibilidad mamaria'] } });
 
 const TAGS = [['arroz integral', 6], ['ternera', 4], ['brócoli', 5], ['huevos', 7], ['aguacate', 5], ['yogur natural', 6], ['avena', 5], ['plátano', 4], ['pollo', 4], ['salmón', 3], ['kéfir', 3], ['infusión de jengibre', 4]];
-for (const [n, u] of TAGS) db.prepare('INSERT INTO tags (user_id, name, uses) VALUES (?, ?, ?)').run(uid, n, u);
+for (const [name, uses] of TAGS) {
+  const t = await call('/tags', { method: 'POST', body: { name } });
+  for (let i = t.uses; i < uses; i++) await call(`/tags/${t.id}/use`, { method: 'POST' });
+}
 
 const DAYS = [
   {
@@ -87,22 +97,22 @@ const DAYS = [
 ];
 
 const MEAL_KEYS = ['desayuno', 'comida', 'snack', 'cena'];
-DAYS.forEach((d, i) => {
-  const date = addDays(start, i);
+for (let i = 0; i < DAYS.length; i++) {
+  const dd = DAYS[i];
   const e = emptyEntry();
-  d.meals.forEach(([time, text], j) => { e.meals[MEAL_KEYS[j]] = { time, text }; });
-  e.drinks = d.drinks;
-  e.water_ml = d.water;
-  e.bowel = d.bowelNone ? { none: true, items: [] } : { none: false, items: d.bowel.map(([time, bristol]) => ({ time, bristol })) };
+  dd.meals.forEach(([time, text], j) => { e.meals[MEAL_KEYS[j]] = { time, text }; });
+  e.drinks = dd.drinks;
+  e.water_ml = dd.water;
+  e.bowel = dd.bowelNone ? { none: true, items: [] } : { none: false, items: dd.bowel.map(([time, bristol]) => ({ time, bristol })) };
   e.symptoms = {
-    bloating: d.s.bloating, bloating_zones: d.s.zones, bloating_visible: d.s.visible, gases: d.s.gases, gases_when: d.s.when,
-    pain: d.s.pain, pain_where: d.s.where || '', nausea: d.s.nausea,
+    bloating: dd.s.bloating, bloating_zones: dd.s.zones, bloating_visible: dd.s.visible, gases: dd.s.gases, gases_when: dd.s.when,
+    pain: dd.s.pain, pain_where: dd.s.where || '', nausea: dd.s.nausea,
   };
-  e.sleep = { quality: d.sleep[0], hours: d.sleep[1] };
-  e.stress = d.stress;
-  e.notes = d.notes;
-  db.prepare('INSERT INTO entries (user_id, date, data) VALUES (?, ?, ?)').run(uid, date, JSON.stringify(e));
-});
+  e.sleep = { quality: dd.sleep[0], hours: dd.sleep[1] };
+  e.stress = dd.stress;
+  e.notes = dd.notes;
+  await call(`/entries/${addDays(start, i)}`, { method: 'PUT', body: { data: e } });
+}
 
 // ---- Fotos ilustrativas ----
 const PLATES = {
@@ -130,31 +140,27 @@ const PHOTO_PLAN = [
   [4, 'cena', 'crema'], [5, 'snack', 'yogur'], [6, 'desayuno', 'avena'], [6, 'comida', 'ternera'],
 ];
 
-let pw;
+let pw = null;
 try { pw = (await import('playwright')).default; } catch {
-  // Playwright instalado globalmente (NODE_PATH)
-  const { createRequire } = await import('node:module');
   for (const base of (process.env.NODE_PATH || '').split(path.delimiter).filter(Boolean)) {
     try { pw = createRequire(path.join(base, 'x.js'))('playwright'); break; } catch { /* siguiente */ }
   }
 }
+const have = await call(`/photos?from=${start}&to=${T}`);
+for (const p of have) await call(`/photos/${p.id}`, { method: 'DELETE' });
 if (pw) {
   const browser = await pw.chromium.launch();
   const page = await browser.newPage({ viewport: { width: 600, height: 600 } });
-  const dir = path.join(UPLOAD_DIR, String(uid));
-  fs.mkdirSync(dir, { recursive: true });
   for (const [di, meal, kind] of PHOTO_PLAN) {
-    await page.setViewportSize({ width: 600, height: 600 });
     await page.setContent(`<body style="margin:0">${plateSvg(PLATES[kind])}</body>`);
-    const full = await page.screenshot({ type: 'jpeg', quality: 85 });
-    const id = crypto.randomUUID();
-    fs.writeFileSync(path.join(dir, `${id}.jpg`), full);
-    fs.writeFileSync(path.join(dir, `${id}_t.jpg`), full);
-    db.prepare('INSERT INTO photos (id, user_id, date, meal, file, thumb) VALUES (?, ?, ?, ?, ?, ?)').run(id, uid, addDays(start, di), meal, `${id}.jpg`, `${id}_t.jpg`);
+    const jpg = await page.screenshot({ type: 'jpeg', quality: 85 });
+    const form = new FormData();
+    form.append('date', addDays(start, di));
+    form.append('meal', meal);
+    form.append('file', new Blob([jpg], { type: 'image/jpeg' }), 'foto.jpg');
+    await call('/photos', { method: 'POST', form });
   }
   await browser.close();
-} else {
-  console.log('Playwright no disponible: se omiten las fotos de ejemplo.');
-}
+} else console.log('Playwright no disponible: se omiten las fotos de ejemplo.');
 
-console.log(`Datos de ejemplo listos: ${EMAIL} / ${PASS} (${start} → ${T})`);
+console.log(`Datos de ejemplo listos en ${BASE}: ${EMAIL} / ${PASS} (${start} → ${T})`);

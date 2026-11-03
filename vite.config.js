@@ -8,8 +8,8 @@ export default defineConfig({
   server: {
     port: 5173,
     host: true,
-    proxy: { '/api': 'http://localhost:3001' },
+    proxy: { '/api': 'http://localhost:8787' },
     fs: { allow: ['..'] },
   },
-  build: { outDir: 'dist', emptyOutDir: true },
+  build: { outDir: 'dist', emptyOutDir: true, chunkSizeWarningLimit: 700 },
 });

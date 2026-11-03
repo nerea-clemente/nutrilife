@@ -1,0 +1,24 @@
+# Cloudflare Workers: API + app estática.
+# La base de datos (D1) y el almacenamiento de fotos (R2) se crean solos en el primer despliegue.
+name = "nutrilife"
+main = "worker/index.js"
+compatibility_date = "2026-10-01"
+
+[assets]
+directory = "client/dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*"]
+
+[[d1_databases]]
+binding = "DB"
+
+[[r2_buckets]]
+binding = "PHOTOS"
+
+# Recordatorios: el Worker revisa cada minuto si toca avisar.
+[triggers]
+crons = ["* * * * *"]
+
+[observability]
+enabled = true

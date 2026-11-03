@@ -2,8 +2,9 @@ import { useState } from 'react';
 import { todayStr, addDays } from '../lib/dates.js';
 import { Card, Switch } from '../components/ui.jsx';
 import { IcDownload, IcShare } from '../components/Icons.jsx';
+import { buildPdf, buildCsv } from '../lib/exporter.js';
 
-export default function ExportPage() {
+export default function ExportPage({ user }) {
   const today = todayStr();
   const [from, setFrom] = useState(addDays(today, -6));
   const [to, setTo] = useState(today);
@@ -18,13 +19,7 @@ export default function ExportPage() {
     { label: '30 días', f: addDays(today, -29) },
   ];
 
-  const fetchFile = async (kind) => {
-    const q = new URLSearchParams({ from, to, ...(kind === 'pdf' && photos ? { photos: '1' } : {}) });
-    const res = await fetch(`/api/export.${kind}?${q}`, { credentials: 'same-origin' });
-    if (!res.ok) throw new Error('No se pudo generar el archivo');
-    const blob = await res.blob();
-    return new File([blob], `diario-${from}_${to}.${kind}`, { type: kind === 'pdf' ? 'application/pdf' : 'text/csv' });
-  };
+  const fetchFile = (kind) => (kind === 'pdf' ? buildPdf(from, to, { withPhotos: photos, userName: user?.name || '' }) : buildCsv(from, to));
 
   const run = async (kind, share) => {
     setErr('');

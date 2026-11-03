@@ -4,22 +4,20 @@
   "version": "0.1.0",
   "type": "module",
   "engines": {
-    "node": ">=22.13"
+    "node": ">=20"
   },
   "scripts": {
-    "dev": "concurrently -k -n api,web -c cyan,magenta \"node --disable-warning=ExperimentalWarning --watch server/index.js\" \"vite\"",
+    "dev": "concurrently -k -n api,web -c cyan,magenta \"wrangler dev --port 8787\" \"vite\"",
     "build": "vite build",
-    "start": "NODE_ENV=production node --disable-warning=ExperimentalWarning server/index.js",
-    "seed": "node --disable-warning=ExperimentalWarning server/seed.js",
-    "create-user": "node --disable-warning=ExperimentalWarning server/create-user.js"
+    "preview": "vite build && wrangler dev --port 8787",
+    "deploy": "vite build && wrangler deploy",
+    "seed": "node scripts/seed.js"
   },
   "dependencies": {
     "@fontsource/poppins": "^5.3.0",
-    "cookie-parser": "^1.4.7",
-    "express": "^5.3.0",
-    "multer": "^2.5.0",
-    "pdfkit": "^0.20.2",
-    "web-push": "^3.6.7"
+    "@pushforge/builder": "^2.0.5",
+    "hono": "^4.13.16",
+    "pdfkit": "^0.20.2"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^6.2.1",
@@ -27,6 +25,7 @@
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-router-dom": "^7.18.5",
-    "vite": "^8.3.5"
+    "vite": "^8.3.5",
+    "wrangler": "^4.157.0"
   }
 }

@@ -4,3 +4,5 @@ data/
 *.log
 .env
 nutrilife.zip
+.wrangler/
+.dev.vars
