@@ -1,0 +1,17 @@
+{
+  "name": "NutriLife · Diario de nutrición",
+  "short_name": "NutriLife",
+  "description": "Diario personal de nutrición, digestión y ciclo",
+  "lang": "es",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F5F8F7",
+  "theme_color": "#33666B",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
